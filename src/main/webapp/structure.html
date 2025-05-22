@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Структура бази даних</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen flex">
+<div id="root" class="w-full"></div>
+
+<script type="text/babel">
+    function StructurePage() {
+        const [structure, setStructure] = React.useState(null);
+        const [error, setError] = React.useState(null);
+        const [showMessage, setShowMessage] = React.useState(false);
+        const [message, setMessage] = React.useState('');
+
+        React.useEffect(() => {
+            fetch("/api/structure")
+                .then(response => response.json())
+                .then(data => setStructure(data))
+                .catch(() => setError("Не вдалося завантажити структуру бази даних"));
+        }, []);
+
+        function handleDisconnect() {
+            fetch('/api/disconnect', {method: 'POST'})
+                .then(response => response.json())
+                .then(data => {
+                    setMessage(data.success ? '✅ Успішно відключено від БД' : `❌ ${data.error || 'Помилка при відключенні'}`);
+                    setShowMessage(true);
+
+                    if (data.success) {
+                        setTimeout(() => {
+                            window.location.href = 'index.html';
+                        }, 1500);
+                    }
+                })
+                .catch(() => {
+                    setMessage('❌ Помилка при відправці запиту');
+                    setShowMessage(true);
+                });
+        }
+
+        return (
+            <div className="flex h-screen">
+                <aside className="w-64 bg-blue-700 text-white flex flex-col p-6 space-y-6">
+                    <h2 className="text-2xl font-bold text-center">Меню</h2>
+                    <nav className="space-y-4">
+                        <a href="connection.html"
+                           className="block px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-lg transition">🔗
+                            Підключення</a>
+                        <span className="block px-4 py-2 bg-blue-800 rounded-lg cursor-default pointer-events-none">📋 Структура БД</span>
+                        <a href="benchmark.html"
+                           className="block px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-lg transition">⚙️
+                            Тест швидкості</a>
+                        <a href="stresstest.html"
+                           className="block px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-lg transition">💥
+                            Стрес-тест</a>
+                        <button onClick={handleDisconnect}
+                                className="block w-full text-left px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg transition">🚪
+                            Вийти
+                        </button>
+                    </nav>
+                </aside>
+
+                <main className="flex-1 p-8">
+                    <div className="bg-white shadow-lg rounded-xl p-6">
+                        <h2 className="text-3xl font-bold text-gray-800 mb-4">📋 Структура бази даних</h2>
+                        {error ? (
+                            <div className="mt-4 p-2 bg-red-100 text-red-700 rounded-md">
+                                ❌ {error}
+                            </div>
+                        ) : structure ? (
+                            <div>
+                                {structure.tables.map(table => (
+                                    <div key={table.name} className="mb-6">
+                                        <h3 className="text-2xl font-semibold text-gray-700">{table.name}</h3>
+                                        <table className="w-full border-collapse border border-gray-300 mt-2">
+                                            <thead>
+                                            <tr className="bg-gray-200">
+                                                <th className="border border-gray-300 px-4 py-2">Колонка</th>
+                                                <th className="border border-gray-300 px-4 py-2">Тип</th>
+                                                <th className="border border-gray-300 px-4 py-2">Обмеження</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                            {table.columns.map(column => (
+                                                <tr key={column.name} className="border border-gray-300">
+                                                    <td className="border border-gray-300 px-4 py-2">{column.name}</td>
+                                                    <td className="border border-gray-300 px-4 py-2">{column.type}</td>
+                                                    <td className="border border-gray-300 px-4 py-2">{column.constraints || "—"}</td>
+                                                </tr>
+                                            ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-gray-600">Завантаження структури бази даних...</p>
+                        )}
+
+                        {showMessage && (
+                            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                                <div className="bg-white p-6 rounded-lg shadow-lg text-center">
+                                    <p className="mb-4">{message}</p>
+                                    <button
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition"
+                                        onClick={() => setShowMessage(false)}>
+                                        OK
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </main>
+            </div>
+        );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<StructurePage/>);
+</script>
+</body>
+</html>

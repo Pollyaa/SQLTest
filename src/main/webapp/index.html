@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Підключення до БД</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script>
+        window.API_URL = window.location.origin;
+    </script>
+</head>
+<body class="bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+    function DBConnectionPage() {
+        const defaultConfigs = {
+            MySQL: {
+                host: '127.0.0.1',
+                port: '3306',
+                username: 'root',
+                password: 'my_password',
+                database: 'my_database'
+            },
+            PostgreSQL: {
+                host: '127.0.0.1',
+                port: '5432',
+                username: 'postgres',
+                password: 'my_password',
+                database: 'my_database'
+            }
+        };
+
+        const [loading, setLoading] = React.useState(true);
+        const [dbType, setDbType] = React.useState('MySQL');
+        const [host, setHost] = React.useState(defaultConfigs.MySQL.host);
+        const [port, setPort] = React.useState(defaultConfigs.MySQL.port);
+        const [username, setUsername] = React.useState(defaultConfigs.MySQL.username);
+        const [password, setPassword] = React.useState(defaultConfigs.MySQL.password);
+        const [database, setDatabase] = React.useState(defaultConfigs.MySQL.database);
+        const [status, setStatus] = React.useState('');
+
+        React.useEffect(() => {
+            fetch(`${window.API_URL}/api/status`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.connected) {
+                        window.location.href = `connection.html`;
+                    } else {
+                        setLoading(false);
+                    }
+                })
+                .catch(() => {
+                    setStatus("Помилка отримання статусу");
+                    setLoading(false);
+                });
+        }, []);
+
+        const handleDbChange = (e) => {
+            const newDbType = e.target.value;
+            setDbType(newDbType);
+            setHost(defaultConfigs[newDbType].host);
+            setPort(defaultConfigs[newDbType].port);
+            setUsername(defaultConfigs[newDbType].username);
+            setPassword(defaultConfigs[newDbType].password);
+            setDatabase(defaultConfigs[newDbType].database);
+        };
+
+        const handleConnect = async () => {
+            setStatus("З'єднання...");
+            try {
+                const response = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({dbType, host, port, username, password, database}),
+                });
+
+                if (response.ok) {
+                    setStatus('Підключення успішне!');
+                    setTimeout(() => {
+                        window.location.href = `connection.html`;
+                    }, 1000);
+                } else {
+                    setStatus('Помилка підключення!');
+                }
+            } catch (error) {
+                setStatus('Помилка з\'єднання з базою даних.');
+            }
+        };
+
+        if (loading) {
+            return <div className="text-white text-xl">Перевірка підключення...</div>;
+        }
+
+        return (
+            <div className="w-full max-w-lg p-6 bg-white shadow-lg rounded-xl">
+                <h2 className="text-2xl font-bold mb-4">Підключення до бази даних</h2>
+
+                <div className="space-y-4">
+                    <label className="block text-sm font-medium text-gray-700">
+                        Тип бази даних
+                        <select
+                            value={dbType}
+                            onChange={handleDbChange}
+                            className="w-full p-2 border border-gray-300 rounded-md mt-1"
+                        >
+                            <option value="PostgreSQL">PostgreSQL</option>
+                            <option value="MySQL">MySQL</option>
+                        </select>
+                    </label>
+
+                    <label className="block">
+                        Хост
+                        <input
+                            value={host}
+                            onChange={(e) => setHost(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-md mt-1"
+                        />
+                    </label>
+
+                    <label className="block">
+                        Порт
+                        <input
+                            value={port}
+                            onChange={(e) => setPort(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-md mt-1"
+                        />
+                    </label>
+
+                    <label className="block">
+                        Користувач
+                        <input
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-md mt-1"
+                        />
+                    </label>
+
+                    <label className="block">
+                        Пароль
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-md mt-1"
+                        />
+                    </label>
+
+                    <label className="block">
+                        База даних
+                        <input
+                            value={database}
+                            onChange={(e) => setDatabase(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-md mt-1"
+                        />
+                    </label>
+                </div>
+
+                <button
+                    onClick={handleConnect}
+                    className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-md w-full"
+                >
+                    Підключитися
+                </button>
+
+                {status && (
+                    <div
+                        className={`mt-4 p-2 rounded-md
+                            ${status.includes("успішне") ? "bg-green-100" :
+                            status.includes("З'єднання") ? "bg-yellow-200" : "bg-red-100"}`}>
+                        {status}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<DBConnectionPage/>);
+</script>
+</body>
+</html>

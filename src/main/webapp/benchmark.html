@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тестування продуктивності БД</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts/umd/Recharts.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen flex">
+<div id="root" class="w-full"></div>
+
+<script type="text/babel">
+    function DBTestingPage() {
+        const [queryType, setQueryType] = React.useState('SELECT');
+        const [messages, setMessages] = React.useState([]);
+        const [loading, setLoading] = React.useState(false);
+        const [socket, setSocket] = React.useState(null);
+        const [progress, setProgress] = React.useState({totalRequests: 0, maxTime: 0, minTime: Infinity, avgTime: 0});
+        const [testStarted, setTestStarted] = React.useState(false);
+        const [completed, setCompleted] = React.useState(false);
+        const [chartData, setChartData] = React.useState([]);
+        const {LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer} = window.Recharts;
+        const timeUnit = queryType === "SELECT" ? "мкс" : (queryType === "SELECT_JOIN" || queryType === "INSERT" || queryType === "DELETE") ? "мс" : "с";
+
+        React.useEffect(() => {
+            const ws = new WebSocket('ws://localhost:8081/ws');
+            ws.onopen = () => console.log('🔗 WebSocket підключено');
+            ws.onerror = (error) => console.error('Помилка WebSocket:', error);
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.status === "running") {
+                    setMessages(prev => [...prev, "🚀 Тестування розпочато"]);
+                } else if (data.status === "progress") {
+                    const total = data.total_requests !== undefined ? data.total_requests : (data.total_queries !== undefined ? data.total_queries : 0);
+                    setProgress(prev => ({
+                        ...prev,
+                        totalRequests: total,
+                        maxTime: data.max_time !== undefined ? data.max_time : prev.maxTime,
+                        minTime: data.min_time !== undefined ? data.min_time : prev.minTime,
+                        avgTime: data.avg_time !== undefined ? data.avg_time : prev.avgTime
+                    }));
+                    if (data.query_time !== undefined) {
+                        setChartData(prev => [...prev, {total: total, query_time: data.query_time}]);
+                    }
+                } else if (data.status === "completed") {
+                    if (!completed) {
+                        const total = data.total_requests !== undefined ? data.total_requests : (data.total_queries !== undefined ? data.total_queries : 0);
+                        if (data.total_requests !== undefined || data.total_queries !== undefined) {
+                            setMessages(prev => [...prev, "✅ Тестування завершено успішно"]);
+                            setProgress({
+                                totalRequests: total,
+                                maxTime: data.max_time,
+                                minTime: data.min_time,
+                                avgTime: data.avg_time
+                            });
+                        } else {
+                            setMessages(prev => [...prev, "✅ Тестування завершено! (отримано неповні дані)"]);
+                        }
+                        setCompleted(true);
+                        setLoading(false);
+                    }
+                } else if (data.status === "error") {
+                    setMessages(prev => [...prev, "❌ Помилка: " + data.message]);
+                    setLoading(false);
+                } else if (data.message) {
+                    setMessages(prev => [...prev, data.message]);
+                }
+            };
+            setSocket(ws);
+            return () => ws.close();
+        }, [completed]);
+
+        function handleStartTest() {
+            setCompleted(false);
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                setLoading(true);
+                setTestStarted(true);
+                setMessages(prev => [...prev, "⚡ Запуск тесту..."]);
+                if (queryType === "SELECT") {
+                    startSelectTest();
+                } else {
+                    socket.send(JSON.stringify({action: 'start-test', queryType}));
+                }
+            } else {
+                setMessages(prev => [...prev, "❌ Підключення до WebSocket відсутнє"]);
+            }
+        }
+
+        function startSelectTest() {
+            socket.send(JSON.stringify({action: 'start-test', queryType: 'SELECT'}));
+        }
+
+        function handleDisconnect() {
+            fetch('/api/disconnect', {method: 'POST'})
+                .then(response => response.json())
+                .then(data => {
+                    const disconnectMessage = data.success ? "✅ Успішно відключено від БД" : "❌ " + (data.error || "Помилка при відключенні");
+                    setMessages(prev => [...prev, disconnectMessage]);
+                    if (data.success) {
+                        setTimeout(() => {
+                            window.location.href = "index.html"
+                        }, 1500);
+                    }
+                })
+                .catch(() => {
+                    setMessages(prev => [...prev, "❌ Помилка при відправці запиту"]);
+                });
+        }
+
+        function handleQueryTypeChange(e) {
+            setQueryType(e.target.value);
+            setTestStarted(false);
+            setMessages([]);
+            setProgress({totalRequests: 0, maxTime: 0, minTime: Infinity, avgTime: 0});
+            setCompleted(false);
+            setChartData([]);
+        }
+
+        return (
+            <div className="flex min-h-screen">
+                <aside className="w-64 bg-blue-700 text-white flex flex-col p-6 space-y-6">
+                    <h2 className="text-2xl font-bold text-center">Меню</h2>
+                    <nav className="space-y-4">
+                        <a href="connection.html"
+                           className="block px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-lg transition">🔗
+                            Підключення</a>
+                        <a href="structure.html"
+                           className="block px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-lg transition">📋 Структура
+                            БД</a>
+                        <span className="block px-4 py-2 bg-blue-800 rounded-lg cursor-default pointer-events-none">⚙️ Тест швидкості</span>
+                        <a href="stresstest.html"
+                           className="block px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-lg transition">💥
+                            Стрес-тест</a>
+                        <button onClick={handleDisconnect}
+                                className="block w-full text-left px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg transition">🚪
+                            Вийти
+                        </button>
+                    </nav>
+                </aside>
+                <main className="flex-1 p-8">
+                    <div className="bg-white shadow-lg rounded-xl p-6 mb-6">
+                        <h2 className="text-3xl font-bold text-gray-800 mb-4">⚙️ Тестування швидкості бази даних</h2>
+                        <div className="mb-4">
+                            <label className="block text-gray-700 font-bold">Тип запиту:</label>
+                            <select value={queryType} onChange={handleQueryTypeChange} disabled={testStarted}
+                                    className="w-full p-2 border rounded">
+                                <option value="SELECT">SELECT</option>
+                                <option value="SELECT_JOIN">SELECT with JOIN</option>
+                                <option value="INSERT">INSERT</option>
+                                <option value="UPDATE">UPDATE</option>
+                                <option value="DELETE">DELETE</option>
+                            </select>
+                        </div>
+                        <button onClick={handleStartTest} disabled={testStarted}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition">Запустити
+                            тест
+                        </button>
+                        {loading && (
+                            <div className="mt-4 p-2 bg-yellow-100 rounded-md flex items-center">
+                                <svg className="animate-spin h-5 w-5 mr-2 text-yellow-500" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                            strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor"
+                                          d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 018 8h-4l3 3 3-3h-4a8 8 0 01-8 8v-4l-3 3 3 3v-4a8 8 0 01-8-8z"></path>
+                                </svg>
+                                Йде тестування, будь ласка, зачекайте...
+                            </div>
+                        )}
+                    </div>
+                    {testStarted && (
+                        <React.Fragment>
+                            <div className="bg-white shadow-lg rounded-xl p-6 mb-6">
+                                <h3 className="text-2xl font-bold text-gray-700">📊 Прогрес тестування</h3>
+                                <p>📌 Всього запитів: {progress.totalRequests}</p>
+                                <p>🚀 Максимальний час виконання: {progress.maxTime} {timeUnit}</p>
+                                <p>⏳ Мінімальний час
+                                    виконання: {progress.minTime === Infinity ? 0 : progress.minTime} {timeUnit}</p>
+                                <p>📈 Середній час
+                                    виконання: {progress.avgTime !== undefined ? progress.avgTime.toFixed(2) : "—"} {timeUnit}</p>
+                            </div>
+                            <div className="bg-white shadow-lg rounded-xl p-6 mb-6">
+                                <h3 className="text-2xl font-bold text-gray-800 mb-4">🔍 Лог тестування</h3>
+                                <div>
+                                    {messages.map((msg, index) => (
+                                        <p key={index}>{msg}</p>
+                                    ))}
+                                </div>
+                            </div>
+                            {chartData.length > 0 && (
+                                <div className="bg-white shadow-lg rounded-xl p-6 mb-6">
+                                    <h3 className="text-2xl font-bold text-gray-700">📈 Графік швидкості запитів</h3>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <LineChart data={chartData}>
+                                            <CartesianGrid strokeDasharray="3 3"/>
+                                            <XAxis dataKey="total" tick={{fill: '#000000'}}/>
+                                            <YAxis tick={{fill: '#000000'}}
+                                                   domain={queryType === "SELECT" ? [0, dataMax => dataMax ? Math.ceil(dataMax * 1.1 / 100) * 100 : 100] : undefined}
+                                                   label={{
+                                                       value: "Час виконання запиту, " + timeUnit,
+                                                       angle: -90,
+                                                       position: "insideLeft",
+                                                       style: {textAnchor: "middle"}
+                                                   }}/>
+                                            <Tooltip/>
+                                            <Legend/>
+                                            <Line type="monotone" dataKey="query_time" name="Кількість запитів"
+                                                  stroke="#8884d8" dot={false}/>
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                        </React.Fragment>
+                    )}
+                </main>
+            </div>
+        );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<DBTestingPage/>);
+</script>
+</body>
+</html>
